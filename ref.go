@@ -4,6 +4,7 @@ package ref
 
 import (
 	"fmt"
+	"math/bits"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,6 +23,30 @@ func init() {
 	re_hexref = regexp.MustCompile(`^[0-9a-fA-F]+([-][0-9a-fA-F]+)*$`)
 	re_decref = regexp.MustCompile(`^[0-9]+([,][0-9]+)+$`)
 	re_dotref = regexp.MustCompile(`^([1-9]?[0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])([.]([1-9]?[0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]))+$`)
+}
+
+// print ref as dash separated hex quads: 2f-4883-0005-2a1b
+func (ref *Ref) String() string {
+
+	var sb strings.Builder
+
+	var writequads = func(word uint64) {
+		for ii := 0; ii < 4; ii++ {
+			word = bits.RotateLeft64(word, 16)
+			if sb.Len() == 0 {
+				if quad := word & 0xffff; quad != 0 {
+					sb.WriteString(fmt.Sprintf("%x", quad))
+				}
+			} else {
+				sb.WriteString(fmt.Sprintf("-%04x", word&0xffff))
+			}
+		}
+	}
+
+	writequads(ref.H)
+	writequads(ref.L)
+
+	return sb.String()
 }
 
 // parse reference
