@@ -25,7 +25,7 @@ func init() {
 	re_dotref = regexp.MustCompile(`^([1-9]?[0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])([.]([1-9]?[0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]))+$`)
 }
 
-func (ref *Ref) isZero() bool {
+func (ref *Ref) IsZero() bool {
 	return ref.H == 0 && ref.L == 0
 }
 
