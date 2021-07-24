@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019 Waldemar Augustyn */
+/* Copyright (c) 2018-2021 Waldemar Augustyn */
 
 package ref
 
@@ -49,6 +49,10 @@ func (ref *Ref) String() string {
 
 	writequads(ref.H)
 	writequads(ref.L)
+
+	if sb.Len() == 0 {
+		sb.WriteString("0")
+	}
 
 	return sb.String()
 }
