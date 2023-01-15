@@ -135,7 +135,7 @@ The most reliable way of embedding references is to place them in a UDP packet. 
 
   IPREF option fields:
 
-    option      - copy of the option or extension header first octed (not used)
+    option      - copy of the option or extension header first octet (ignored)
 
     length      - length per respective option or extension header (36 or 4)
 
