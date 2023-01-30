@@ -1,6 +1,6 @@
 ## Embedding References
 
-References are part of a Layer 3 protocol. The most natural location for them is in a Layer 3 protocol header such as IPV4 options or IPv6 extension headers. Unfortunately, many Internet Service Providers drop options and extension headers that they deem not worthy processing. Even if they don't, network devices tend to put packets containing them on a slow processing path resulting in poor performance. The most reliable way of transferring packets with references is via a UDP tunnel. Other tunneling techniques might also be utilized.
+References are part of a Layer 3 protocol. The most natural location for them is in a Layer 3 protocol header such as IPv4 options or IPv6 extension headers. Unfortunately, many Internet Service Providers drop options and extension headers that they deem not worthy processing. Even if they don't, network devices tend to put packets containing them on a slow processing path resulting in poor performance. The most reliable way of transferring packets with references is via a UDP tunnel. Other tunneling techniques might also be utilized.
 
 ### IPv4 Option
 
