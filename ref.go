@@ -1,132 +1,169 @@
-/* Copyright (c) 2018-2021 Waldemar Augustyn */
+/* Copyright (c) 2025 Waldemar Augustyn */
 
 package ref
 
 import (
+	"errors"
 	"fmt"
-	"math/bits"
-	"regexp"
-	"strconv"
 	"strings"
 )
 
-type Ref struct {
-	H uint64
-	L uint64
+// The zero ref is Ref{}
+type Ref Uint128
+
+func (ref Ref) IsZero() bool {
+	return ref == Ref{}
 }
 
-var re_hexref *regexp.Regexp
-var re_decref *regexp.Regexp
-var re_dotref *regexp.Regexp
-
-func init() {
-	re_hexref = regexp.MustCompile(`^[0-9a-fA-F]+([-][0-9a-fA-F]+)*$`)
-	re_decref = regexp.MustCompile(`^[0-9]+([,][0-9]+)+$`)
-	re_dotref = regexp.MustCompile(`^([1-9]?[0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])([.]([1-9]?[0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]))+$`)
+func ParseRef(str string) (Ref, error) {
+	return parse_ref(str, false)
 }
 
-func (ref *Ref) IsZero() bool {
-	return ref.H == 0 && ref.L == 0
+func ParseRefInPrefix(str string) (Ref, error) {
+	return parse_ref(str, true)
 }
 
-// print ref as dash separated hex quads: 2f-4883-0005-2a1b
-func (ref *Ref) String() string {
+func parse_ref(str string, cidr bool) (Ref, error) {
 
-	var sb strings.Builder
-
-	var writequads = func(word uint64) {
-		for ii := 0; ii < 4; ii++ {
-			word = bits.RotateLeft64(word, 16)
-			if sb.Len() == 0 {
-				if quad := word & 0xffff; quad != 0 {
-					sb.WriteString(fmt.Sprintf("%x", quad))
-				}
-			} else {
-				sb.WriteString(fmt.Sprintf("-%04x", word&0xffff))
-			}
+	if !cidr && !strings.Contains(str, "-") {
+		if val, ok := ParseUint128(str, 10); ok {
+			return Ref(val), nil
 		}
+		return Ref{}, errors.New("invalid format")
 	}
-
-	writequads(ref.H)
-	writequads(ref.L)
-
-	if sb.Len() == 0 {
-		sb.WriteString("0")
-	}
-
-	return sb.String()
-}
-
-// parse reference
-func Parse(sss string) (Ref, error) {
-
-	var ref Ref
-	var err error
-	var val uint64 // go does not allow ref.L, err := something(), need intermediate variable
-
-	// hex
-
-	if re_hexref.MatchString(sss) {
-
-		hex := strings.Replace(sss, "-", "", -1)
-		hexlen := len(hex)
-		if hexlen < 17 {
-			ref.H = 0
-			val, err = strconv.ParseUint(hex, 16, 64)
-			if err != nil {
-				return ref, err
-			}
-			ref.L = val
-			return ref, nil
-		} else {
-			val, err = strconv.ParseUint(hex[:hexlen-16], 16, 64)
-			if err != nil {
-				return ref, err
-			}
-			ref.H = val
-			val, err = strconv.ParseUint(hex[hexlen-16:hexlen], 16, 64)
-			if err != nil {
-				return ref, err
-			}
-			ref.L = val
-			return ref, nil
+	ss := strings.Split(str, "--")
+	if len(ss) == 1 {
+		val, bits, err := parse_ref_comps(ss[0])
+		if cidr && bits != 128 {
+			return Ref{}, errors.New("ref in prefix needs '--' unless it is full-length")
 		}
+		return Ref(val), err
 	}
-
-	// decimal
-
-	if re_decref.MatchString(sss) {
-
-		decstr := strings.Replace(sss, ",", "", -1)
-		ref.H = 0
-		val, err = strconv.ParseUint(decstr, 10, 64)
+	if len(ss) == 2 {
+		if len(ss[0]) == 0 {
+			return Ref{}, errors.New("ref cannot have leading '--'")
+		}
+		if len(ss[1]) == 0 {
+			val, bits, err := parse_ref_comps(ss[0])
+			return Ref(val.Lsh(128 - bits)), err
+		}
+		a, abits, err := parse_ref_comps(ss[0])
 		if err != nil {
-			return ref, err
+			return Ref{}, err
 		}
-		ref.L = val
-		return ref, nil
-	}
-
-	// dotted decimal
-
-	if re_dotref.MatchString(sss) {
-		dot := strings.Split(sss, ".")
-		dotlen := len(dot)
-		for ii := 0; ii < dotlen; ii++ {
-			dec, err := strconv.ParseUint(dot[ii], 10, 8)
-			if err != nil {
-				return ref, err
-			}
-			if ii < (dotlen - 8) {
-				ref.H <<= 8
-				ref.H += uint64(dec)
-			} else {
-				ref.L <<= 8
-				ref.L += uint64(dec)
-			}
+		b, bbits, err := parse_ref_comps(ss[1])
+		if err != nil {
+			return Ref{}, err
 		}
-		return ref, nil
+		if abits + bbits >= 128 {
+			return Ref{}, errors.New("ref is larger than 128 bits")
+		}
+		return Ref(a.Lsh(128 - abits).Or(b)), nil
 	}
+	return Ref{}, errors.New("ref contains more than one '--'")
+}
 
-	return ref, fmt.Errorf("unrecognized format")
+func parse_ref_comps(str string) (Uint128, uint, error) {
+
+	var n Uint128
+	var bits uint
+	for _, comp := range strings.Split(str, "-") {
+		if bits >= 128 {
+			return Uint128{}, 0, errors.New("ref is larger than 128 bits")
+		}
+		if len(comp) > 4 {
+			return Uint128{}, 0, errors.New("invalid format")
+		}
+		val, ok := ParseUint128(comp, 16)
+		if !ok || val.Cmp(Uint128FromUint64(1 << 16)) >= 0 {
+			return Uint128{}, 0, errors.New("invalid format")
+		}
+		n = n.Lsh(16).Or(val)
+		bits += 16
+	}
+	return n, bits, nil
+}
+
+func MustParseRef(str string) Ref {
+
+	ref, err := ParseRef(str)
+	if err != nil {
+		panic(fmt.Sprintf("invalid ref: %q", str))
+	}
+	return ref
+}
+
+func ParseIpRef(str string) (ipref IpRef, err error) {
+
+	ip, ref, found := strings.Cut(str, "+")
+	if !found {
+		return IpRef{}, errors.New("invalid format (missing '+')")
+	}
+	ipref.IP, err = ParseIP(strings.TrimSpace(ip))
+	if err != nil {
+		return
+	}
+	ipref.Ref, err = ParseRef(strings.TrimSpace(ref))
+	return
+}
+
+func MustParseIpRef(str string) IpRef {
+
+	ipref, err := ParseIpRef(str)
+	if err != nil {
+		panic(fmt.Sprintf("invalid ipref: %q", str))
+	}
+	return ipref
+}
+
+func (ref Ref) String() string {
+
+	val := Uint128(ref)
+	if val.Cmp(Uint128FromUint64(1 << 16)) < 0 {
+		return val.String()
+	}
+	var s string
+	bits := 0
+	for !val.IsZero() {
+		if bits != 0 {
+			s = "-" + s
+		}
+		s = val.And(Uint128FromUint64(0xffff)).FormatHex() + s
+		val = val.Rsh(16)
+		bits += 16
+	}
+	if bits <= 16 {
+		s = "0-" + s
+	}
+	return s
+}
+
+func (ref Ref) StringInPrefix() string {
+
+	val := Uint128(ref)
+	if val.IsZero() {
+		return "0--"
+	}
+	var s string
+	bits := 0
+	for !val.IsZero() {
+		if bits != 0 {
+			s += "-"
+		}
+		s += val.Rsh(128 - 16).FormatHex()
+		val = val.Lsh(16)
+		bits += 16
+	}
+	if bits != 128 {
+		s += "--"
+	}
+	return s
+}
+
+func (ref Ref) AsSliceBE() []byte {
+	return Uint128(ref).AsSliceBE()
+}
+
+func RefFromBytesBE(src []byte) Ref {
+	return Ref(Uint128FromBytesBE(src))
 }
